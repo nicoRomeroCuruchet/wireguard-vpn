@@ -66,8 +66,25 @@ func runClient(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "registered: node_id=%s overlay_ip=%s\n", st.NodeID, st.OverlayIP)
 		return 0
 	case "run":
-		fmt.Fprintln(stderr, "client run: not implemented yet")
-		return 1
+		fs := flag.NewFlagSet("client run", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		serverURL := fs.String("server", "", "control plane URL (required)")
+		stateDir := fs.String("state-dir", "", "state directory (default: ~/.local/state/hsl)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *serverURL == "" {
+			fmt.Fprintln(stderr, "client run: --server is required")
+			return 2
+		}
+		logger := slog.New(slog.NewTextHandler(stderr, nil))
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		if err := client.Run(ctx, *serverURL, *stateDir, logger); err != nil {
+			fmt.Fprintf(stderr, "client run: %v\n", err)
+			return 1
+		}
+		return 0
 	default:
 		fmt.Fprintf(stderr, "unknown client subcommand %q\n", args[0])
 		return 2

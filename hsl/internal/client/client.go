@@ -4,8 +4,10 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,7 +15,103 @@ import (
 
 	"github.com/nromero/hsl/internal/proto"
 	"github.com/nromero/hsl/internal/wgmgr"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
+
+const (
+	wgInterface = "wg0"
+	wgMTU       = 1420
+	pollEvery   = 10 * time.Second
+	keepalive   = 25 * time.Second
+)
+
+// configureWG is a seam so tests can avoid kernel access.
+var configureWG = realConfigureWG
+
+func realConfigureWG(st State, priv wgtypes.Key) error {
+	if err := wgmgr.EnsureInterface(wgInterface, st.OverlayIP+"/32", wgMTU); err != nil {
+		return err
+	}
+	return wgmgr.ConfigureDevice(wgInterface, priv, 0, []wgmgr.PeerConfig{{
+		PublicKey:  st.ServerKey,
+		Endpoint:   st.ServerEndpoint,
+		AllowedIPs: []string{st.OverlayNet}, // client side: whole overlay via hub
+		Keepalive:  keepalive,
+	}})
+}
+
+func fetchPeers(httpClient *http.Client, serverURL, nodeID string) (proto.PeersResponse, error) {
+	var out proto.PeersResponse
+	req, err := http.NewRequest(http.MethodGet, serverURL+"/peers", nil)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("X-Node-ID", nodeID)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out, fmt.Errorf("peers: server returned %s", resp.Status)
+	}
+	return out, json.NewDecoder(resp.Body).Decode(&out)
+}
+
+func heartbeat(httpClient *http.Client, serverURL, nodeID string) error {
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/heartbeat", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Node-ID", nodeID)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("heartbeat: server returned %s", resp.Status)
+	}
+	return nil
+}
+
+// Run configures wg0 from local state and then polls the server every 10s,
+// sending heartbeats, until ctx is cancelled. serverURL is the control-plane
+// HTTP URL (separate from the WireGuard endpoint).
+func Run(ctx context.Context, serverURL, stateDir string, logger *slog.Logger) error {
+	if stateDir == "" {
+		stateDir = defaultStateDir()
+	}
+	st, err := loadState(stateDir)
+	if err != nil {
+		return fmt.Errorf("load state (run `hsl client register` first): %w", err)
+	}
+	priv, err := wgmgr.LoadOrCreateKey(keyPath(stateDir))
+	if err != nil {
+		return err
+	}
+	if err := configureWG(st, priv); err != nil {
+		return fmt.Errorf("configure wg0: %w", err)
+	}
+	logger.Info("wg0 configured", "overlay_ip", st.OverlayIP, "hub", st.ServerEndpoint)
+
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	ticker := time.NewTicker(pollEvery)
+	defer ticker.Stop()
+	for {
+		if _, err := fetchPeers(httpClient, serverURL, st.NodeID); err != nil {
+			logger.Warn("fetch peers failed", "err", err)
+		}
+		if err := heartbeat(httpClient, serverURL, st.NodeID); err != nil {
+			logger.Warn("heartbeat failed", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
 
 // State is the persisted client identity + assignment (node.json).
 type State struct {
