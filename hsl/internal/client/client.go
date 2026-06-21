@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/nromero/hsl/internal/proto"
@@ -118,9 +120,16 @@ func Run(ctx context.Context, serverURL, stateDir string, logger *slog.Logger) e
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	ticker := time.NewTicker(pollEvery)
 	defer ticker.Stop()
+	var lastSig string
 	for {
-		if _, err := fetchPeers(httpClient, serverURL, st.NodeID); err != nil {
+		if resp, err := fetchPeers(httpClient, serverURL, st.NodeID); err != nil {
 			logger.Warn("fetch peers failed", "err", err)
+		} else if sig := peersSignature(resp); sig != lastSig {
+			// In strict hub-and-spoke the client's only peer is the hub, so a
+			// changed overlay peer set needs no wg0 reconfiguration — we observe
+			// and log it for visibility rather than reconcile.
+			logger.Info("overlay peer set changed", "peers", len(resp.Peers))
+			lastSig = sig
 		}
 		if err := heartbeat(httpClient, serverURL, st.NodeID); err != nil {
 			logger.Warn("heartbeat failed", "err", err)
@@ -131,6 +140,17 @@ func Run(ctx context.Context, serverURL, stateDir string, logger *slog.Logger) e
 		case <-ticker.C:
 		}
 	}
+}
+
+// peersSignature returns a stable, order-independent signature of the overlay
+// peer set (sorted overlay IPs) so the run loop can detect when it changes.
+func peersSignature(resp proto.PeersResponse) string {
+	ips := make([]string, 0, len(resp.Peers))
+	for _, p := range resp.Peers {
+		ips = append(ips, p.OverlayIP)
+	}
+	sort.Strings(ips)
+	return strings.Join(ips, ",")
 }
 
 // State is the persisted client identity + assignment (node.json).
