@@ -48,7 +48,9 @@ ningún otro nodo.
 
 ## 3. Stack
 
-- **Go 1.22+** (idealmente 1.23+).
+- **Go 1.25+** para compilar. El código solo usa features de Go 1.22 (routing
+  method+path), pero `modernc.org/sqlite` fuerza la directiva `go` del módulo a
+  1.25. Desarrollo con Go 1.26.4; cross-compile a la BBB con el mismo toolchain.
 - **Stdlib first**: `net/http` (router enriquecido de Go 1.22), `log/slog`,
   `encoding/json`, `context`, `os/signal`. Sin Gin/Echo/Chi/Cobra.
 - `golang.zx2c4.com/wireguard/wgctrl` — configura WireGuard vía netlink
