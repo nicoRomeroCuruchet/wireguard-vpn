@@ -1,0 +1,5 @@
+/hsl
+/hsl-arm
+*.db
+*.db-*
+/dist/
