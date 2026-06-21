@@ -252,10 +252,14 @@ func (s *Server) Run(ctx context.Context) error {
 	s.log.Info("hsl server listening", "addr", s.cfg.Addr)
 	select {
 	case err := <-errCh:
+		if err == http.ErrServerClosed {
+			return nil
+		}
 		return err
 	case <-ctx.Done():
-		shutCtx, cancel := context.WithTimeout(context.Background(), 0)
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		s.log.Info("shutting down")
 		return srv.Shutdown(shutCtx)
 	}
 }
