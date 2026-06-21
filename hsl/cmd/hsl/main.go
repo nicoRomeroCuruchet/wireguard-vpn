@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/nromero/hsl/internal/client"
@@ -105,11 +106,21 @@ func runServer(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "server: --endpoint is required (e.g. 1.2.3.4:51820)")
 		return 2
 	}
+	if err := os.MkdirAll(filepath.Dir(*db), 0o700); err != nil {
+		fmt.Fprintf(stderr, "server: %v\n", err)
+		return 1
+	}
+	store, err := server.NewSQLiteStore(*db)
+	if err != nil {
+		fmt.Fprintf(stderr, "server: open db: %v\n", err)
+		return 1
+	}
+	defer store.Close()
 	logger := slog.New(slog.NewTextHandler(stderr, nil))
 	srv, err := server.New(server.Config{
 		Addr: *addr, DBPath: *db, Endpoint: *endpoint,
 		OverlayCIDR: "10.100.0.0/24", KeyPath: *keyPath,
-	}, server.NewMemStore(), logger)
+	}, store, logger)
 	if err != nil {
 		fmt.Fprintf(stderr, "server: %v\n", err)
 		return 1
