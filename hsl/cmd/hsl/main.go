@@ -45,6 +45,7 @@ func runServer(args []string, stderr io.Writer) int {
 	addr := fs.String("addr", ":8080", "HTTP listen address")
 	db := fs.String("db", "/var/lib/hsl/hsl.db", "SQLite database path")
 	endpoint := fs.String("endpoint", "", "public WireGuard endpoint host:port (required)")
+	keyPath := fs.String("key", "/var/lib/hsl/identity.key", "hub WireGuard private key path")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -54,7 +55,8 @@ func runServer(args []string, stderr io.Writer) int {
 	}
 	logger := slog.New(slog.NewTextHandler(stderr, nil))
 	srv, err := server.New(server.Config{
-		Addr: *addr, DBPath: *db, Endpoint: *endpoint, OverlayCIDR: "10.100.0.0/24",
+		Addr: *addr, DBPath: *db, Endpoint: *endpoint,
+		OverlayCIDR: "10.100.0.0/24", KeyPath: *keyPath,
 	}, server.NewMemStore(), logger)
 	if err != nil {
 		fmt.Fprintf(stderr, "server: %v\n", err)

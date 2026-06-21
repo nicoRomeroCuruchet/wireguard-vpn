@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/nromero/hsl/internal/proto"
+	"github.com/nromero/hsl/internal/wgmgr"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 // Config holds server runtime configuration from flags.
@@ -19,15 +21,24 @@ type Config struct {
 	DBPath      string // SQLite path (unused until Task 13)
 	Endpoint    string // public WireGuard endpoint host:port returned to clients
 	OverlayCIDR string // e.g. "10.100.0.0/24"
+	KeyPath     string // path to hub WireGuard private key; default /var/lib/hsl/identity.key
 }
+
+const (
+	wgInterface = "wg0"
+	wgMTU       = 1420
+	wgPort      = 51820
+)
 
 // Server is the hsl control plane.
 type Server struct {
-	cfg    Config
-	store  Store
-	log    *slog.Logger
-	hubIP  string // first host of overlay, e.g. 10.100.0.1
-	pubKey string // WireGuard public key; set in Task 10
+	cfg     Config
+	store   Store
+	log     *slog.Logger
+	hubIP   string      // first host of overlay, e.g. 10.100.0.1
+	pubKey  string      // WireGuard public key; set in Task 10
+	privKey wgtypes.Key // hub WireGuard private key
+	skipWG  bool        // test seam: skip all kernel/netlink work
 }
 
 func New(cfg Config, store Store, logger *slog.Logger) (*Server, error) {
@@ -187,11 +198,54 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, proto.HeartbeatResponse{OK: true})
 }
 
-// afterRegister is a hook for kernel reconciliation, wired in Task 10.
-func (s *Server) afterRegister(n Node) {}
+func (s *Server) loadKey() error {
+	key, err := wgmgr.LoadOrCreateKey(s.cfg.KeyPath)
+	if err != nil {
+		return fmt.Errorf("load hub key: %w", err)
+	}
+	s.privKey = key
+	s.pubKey = key.PublicKey().String()
+	return nil
+}
+
+func (s *Server) reconcileWG() error {
+	if err := wgmgr.EnsureInterface(wgInterface, s.hubIP+"/24", wgMTU); err != nil {
+		return err
+	}
+	nodes, err := s.store.List()
+	if err != nil {
+		return err
+	}
+	peers := make([]wgmgr.PeerConfig, 0, len(nodes))
+	for _, n := range nodes {
+		peers = append(peers, wgmgr.PeerConfig{
+			PublicKey:  n.PublicKey,
+			AllowedIPs: []string{n.OverlayIP + "/32"}, // hub side: per-client /32
+		})
+	}
+	return wgmgr.ConfigureDevice(wgInterface, s.privKey, wgPort, peers)
+}
+
+// afterRegister reconciles WireGuard peers after a new node registers.
+func (s *Server) afterRegister(n Node) {
+	if s.skipWG {
+		return
+	}
+	if err := s.reconcileWG(); err != nil {
+		s.log.Error("reconcile wireguard after register failed", "node", n.ID, "err", err)
+	}
+}
 
 // Run starts the HTTP server and blocks until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
+	if !s.skipWG {
+		if err := s.loadKey(); err != nil {
+			return err
+		}
+		if err := s.reconcileWG(); err != nil {
+			return fmt.Errorf("initial wireguard reconcile: %w", err)
+		}
+	}
 	srv := &http.Server{Addr: s.cfg.Addr, Handler: s.Handler()}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()

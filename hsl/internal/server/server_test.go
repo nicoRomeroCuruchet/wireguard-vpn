@@ -15,6 +15,7 @@ func testServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.skipWG = true
 	return s
 }
 
