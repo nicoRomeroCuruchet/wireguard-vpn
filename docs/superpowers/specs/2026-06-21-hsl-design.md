@@ -151,7 +151,11 @@ Shutdown limpio con `signal.NotifyContext` (SIGINT, SIGTERM) y
 `hsl client run`:
 
 1. Lee el state local.
-2. Crea/levanta `wg0` vía `netlink` (`Address = overlay_ip`, `MTU 1420`).
+2. Crea/levanta `wg0` vía `netlink` (`Address = overlay_ip` con el **prefijo del
+   overlay**, ej. `10.100.0.2/24` — NO `/32`, MTU 1420). El prefijo del overlay
+   instala la ruta conectada a toda la subred vía `wg0`; un `/32` solo instala la
+   ruta del propio host y el cliente no tendría ruta de kernel hacia el resto del
+   overlay (AllowedIPs por sí solo es cryptokey routing, no instala ruta).
 3. Configura `wg0` vía `wgctrl`:
    - Privada del nodo.
    - Peer = servidor (`server_key`, `server_endpoint`), con
