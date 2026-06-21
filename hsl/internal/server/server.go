@@ -47,6 +47,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("POST /register", s.handleRegister)
+	mux.HandleFunc("GET /peers", s.handlePeers)
+	mux.HandleFunc("POST /heartbeat", s.handleHeartbeat)
 	return mux
 }
 
@@ -130,6 +132,59 @@ func (s *Server) registerResponse(n Node) proto.RegisterResponse {
 		ServerEndpoint: s.cfg.Endpoint,
 		OverlayNet:     s.cfg.OverlayCIDR,
 	}
+}
+
+func (s *Server) authNodeID(r *http.Request) (string, bool) {
+	id := r.Header.Get("X-Node-ID")
+	if id == "" {
+		return "", false
+	}
+	nodes, err := s.store.List()
+	if err != nil {
+		return "", false
+	}
+	for _, n := range nodes {
+		if n.ID == id {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.authNodeID(r)
+	if !ok {
+		httpError(w, http.StatusUnauthorized, "missing or unknown X-Node-ID")
+		return
+	}
+	_ = s.store.Touch(id, time.Now())
+	nodes, err := s.store.List()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, "store error")
+		return
+	}
+	resp := proto.PeersResponse{}
+	// Advertise the hub itself first.
+	resp.Peers = append(resp.Peers, proto.Peer{
+		ID: "hub", PublicKey: s.serverPublicKey(), OverlayIP: s.hubIP, Hostname: "hub",
+	})
+	for _, n := range nodes {
+		resp.Peers = append(resp.Peers, proto.Peer{
+			ID: n.ID, PublicKey: n.PublicKey, OverlayIP: n.OverlayIP,
+			Hostname: n.Hostname, LastSeen: n.LastSeen.UTC().Format(time.RFC3339),
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.authNodeID(r)
+	if !ok {
+		httpError(w, http.StatusUnauthorized, "missing or unknown X-Node-ID")
+		return
+	}
+	_ = s.store.Touch(id, time.Now())
+	writeJSON(w, http.StatusOK, proto.HeartbeatResponse{OK: true})
 }
 
 // afterRegister is a hook for kernel reconciliation, wired in Task 10.
