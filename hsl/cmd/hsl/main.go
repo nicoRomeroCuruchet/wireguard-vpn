@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/nromero/hsl/internal/client"
 	"github.com/nromero/hsl/internal/server"
 )
 
@@ -31,10 +32,44 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 	case "server":
 		return runServer(args[1:], stderr)
 	case "client":
-		fmt.Fprintln(stderr, "client: not implemented yet")
-		return 1
+		return runClient(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func runClient(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: hsl client <register|run> [flags]")
+		return 2
+	}
+	switch args[0] {
+	case "register":
+		fs := flag.NewFlagSet("client register", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		serverURL := fs.String("server", "", "control plane URL, e.g. http://1.2.3.4:8080 (required)")
+		hostname := fs.String("hostname", "", "node hostname (default: OS hostname)")
+		stateDir := fs.String("state-dir", "", "state directory (default: ~/.local/state/hsl)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *serverURL == "" {
+			fmt.Fprintln(stderr, "client register: --server is required")
+			return 2
+		}
+		st, err := client.Register(*serverURL, *hostname, *stateDir)
+		if err != nil {
+			fmt.Fprintf(stderr, "client register: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "registered: node_id=%s overlay_ip=%s\n", st.NodeID, st.OverlayIP)
+		return 0
+	case "run":
+		fmt.Fprintln(stderr, "client run: not implemented yet")
+		return 1
+	default:
+		fmt.Fprintf(stderr, "unknown client subcommand %q\n", args[0])
 		return 2
 	}
 }
