@@ -32,3 +32,14 @@ func TestMemStoreTouch(t *testing.T) {
 		t.Fatalf("LastSeen = %v, want %v", list[0].LastSeen, ts)
 	}
 }
+
+func TestMemStoreListNumericOrder(t *testing.T) {
+	s := NewMemStore()
+	_ = s.Create(Node{ID: "a", PublicKey: "pka", OverlayIP: "10.100.0.10"})
+	_ = s.Create(Node{ID: "b", PublicKey: "pkb", OverlayIP: "10.100.0.2"})
+	list, _ := s.List()
+	// .2 must come before .10 — lexical order would put .10 first.
+	if list[0].OverlayIP != "10.100.0.2" || list[1].OverlayIP != "10.100.0.10" {
+		t.Fatalf("List not numerically ordered: %s, %s", list[0].OverlayIP, list[1].OverlayIP)
+	}
+}

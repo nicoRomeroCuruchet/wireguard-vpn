@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 )
@@ -39,4 +40,15 @@ func incIP(ip net.IP) {
 			break
 		}
 	}
+}
+
+// lessOverlayIP orders overlay IP strings numerically, so 10.100.0.9 sorts
+// before 10.100.0.10. Unparseable IPs fall back to lexical order for
+// determinism. Shared by both Store implementations' List.
+func lessOverlayIP(a, b string) bool {
+	ia, ib := net.ParseIP(a), net.ParseIP(b)
+	if ia == nil || ib == nil {
+		return a < b
+	}
+	return bytes.Compare(ia.To16(), ib.To16()) < 0
 }

@@ -41,7 +41,7 @@ func (s *MemStore) List() ([]Node, error) {
 	for _, n := range s.byID {
 		out = append(out, n)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].OverlayIP < out[j].OverlayIP })
+	sort.Slice(out, func(i, j int) bool { return lessOverlayIP(out[i].OverlayIP, out[j].OverlayIP) })
 	return out, nil
 }
 
