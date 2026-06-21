@@ -51,3 +51,19 @@ func readFileExists(path string) (bool, error) {
 	}
 	return true, nil
 }
+
+func TestIfaceAddrCIDRUsesOverlayPrefix(t *testing.T) {
+	got, err := ifaceAddrCIDR("10.100.0.2", "10.100.0.0/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "10.100.0.2/24" {
+		t.Fatalf("got %q, want 10.100.0.2/24 (overlay prefix, not /32)", got)
+	}
+}
+
+func TestIfaceAddrCIDRBadNet(t *testing.T) {
+	if _, err := ifaceAddrCIDR("10.100.0.2", "not-a-cidr"); err == nil {
+		t.Fatal("expected error for invalid overlay net")
+	}
+}

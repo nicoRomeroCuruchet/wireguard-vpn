@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,8 +29,27 @@ const (
 // configureWG is a seam so tests can avoid kernel access.
 var configureWG = realConfigureWG
 
+// ifaceAddrCIDR returns the address to assign to the client's wg0: the node's
+// overlay IP carrying the OVERLAY prefix length (e.g. 10.100.0.2/24), not /32.
+// The overlay prefix is what installs a connected route for the whole overlay
+// via wg0 — a /32 installs only the host's own route, so without it the client
+// has no kernel route to reach other overlay IPs and AllowedIPs (cryptokey
+// routing) alone cannot carry the traffic.
+func ifaceAddrCIDR(overlayIP, overlayNet string) (string, error) {
+	_, ipnet, err := net.ParseCIDR(overlayNet)
+	if err != nil {
+		return "", fmt.Errorf("parse overlay net %q: %w", overlayNet, err)
+	}
+	ones, _ := ipnet.Mask.Size()
+	return fmt.Sprintf("%s/%d", overlayIP, ones), nil
+}
+
 func realConfigureWG(st State, priv wgtypes.Key) error {
-	if err := wgmgr.EnsureInterface(wgInterface, st.OverlayIP+"/32", wgMTU); err != nil {
+	addrCIDR, err := ifaceAddrCIDR(st.OverlayIP, st.OverlayNet)
+	if err != nil {
+		return err
+	}
+	if err := wgmgr.EnsureInterface(wgInterface, addrCIDR, wgMTU); err != nil {
 		return err
 	}
 	return wgmgr.ConfigureDevice(wgInterface, priv, 0, []wgmgr.PeerConfig{{
