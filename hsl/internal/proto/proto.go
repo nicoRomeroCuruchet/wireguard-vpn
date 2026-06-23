@@ -8,19 +8,21 @@ type RegisterRequest struct {
 }
 
 type RegisterResponse struct {
-	NodeID         string `json:"node_id"`
-	OverlayIP      string `json:"overlay_ip"`
-	ServerKey      string `json:"server_key"`
-	ServerEndpoint string `json:"server_endpoint"`
-	OverlayNet     string `json:"overlay_net"`
+	NodeID           string   `json:"node_id"`
+	OverlayIP        string   `json:"overlay_ip"`
+	ServerKey        string   `json:"server_key"`
+	ServerEndpoint   string   `json:"server_endpoint"`
+	OverlayNet       string   `json:"overlay_net"`
+	AdvertisedRoutes []string `json:"advertised_routes"`
 }
 
 type Peer struct {
-	ID        string `json:"id"`
-	PublicKey string `json:"public_key"`
-	OverlayIP string `json:"overlay_ip"`
-	Hostname  string `json:"hostname"`
-	LastSeen  string `json:"last_seen"`
+	ID               string   `json:"id"`
+	PublicKey        string   `json:"public_key"`
+	OverlayIP        string   `json:"overlay_ip"`
+	Hostname         string   `json:"hostname"`
+	LastSeen         string   `json:"last_seen"`
+	AdvertisedRoutes []string `json:"advertised_routes"`
 }
 
 type PeersResponse struct {

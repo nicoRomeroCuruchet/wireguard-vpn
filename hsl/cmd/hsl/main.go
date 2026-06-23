@@ -9,11 +9,21 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/nromero/hsl/internal/client"
 	"github.com/nromero/hsl/internal/server"
 )
+
+// stringSlice is a flag.Value that accumulates repeated flag occurrences.
+type stringSlice []string
+
+func (s *stringSlice) String() string { return strings.Join(*s, ",") }
+func (s *stringSlice) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
 
 const version = "hsl 0.1.0-dev"
 
@@ -99,6 +109,8 @@ func runServer(args []string, stderr io.Writer) int {
 	db := fs.String("db", "/var/lib/hsl/hsl.db", "SQLite database path")
 	endpoint := fs.String("endpoint", "", "public WireGuard endpoint host:port (required)")
 	keyPath := fs.String("key", "/var/lib/hsl/identity.key", "hub WireGuard private key path")
+	var advertiseRoutes stringSlice
+	fs.Var(&advertiseRoutes, "advertise-routes", "CIDR to advertise to clients (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -120,6 +132,7 @@ func runServer(args []string, stderr io.Writer) int {
 	srv, err := server.New(server.Config{
 		Addr: *addr, DBPath: *db, Endpoint: *endpoint,
 		OverlayCIDR: "10.100.0.0/24", KeyPath: *keyPath,
+		AdvertisedRoutes: advertiseRoutes,
 	}, store, logger)
 	if err != nil {
 		fmt.Fprintf(stderr, "server: %v\n", err)

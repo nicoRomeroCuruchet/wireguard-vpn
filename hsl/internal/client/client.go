@@ -54,10 +54,13 @@ func realConfigureWG(st State, priv wgtypes.Key) error {
 	if err := wgmgr.EnsureInterface(wgInterface, addrCIDR, wgMTU); err != nil {
 		return err
 	}
+	allowedIPs := make([]string, 0, 1+len(st.AdvertisedRoutes))
+	allowedIPs = append(allowedIPs, st.OverlayNet)
+	allowedIPs = append(allowedIPs, st.AdvertisedRoutes...)
 	return wgmgr.ConfigureDevice(wgInterface, priv, 0, []wgmgr.PeerConfig{{
 		PublicKey:  st.ServerKey,
 		Endpoint:   st.ServerEndpoint,
-		AllowedIPs: []string{st.OverlayNet}, // client side: whole overlay via hub
+		AllowedIPs: allowedIPs,
 		Keepalive:  keepalive,
 	}})
 }
@@ -155,11 +158,12 @@ func peersSignature(resp proto.PeersResponse) string {
 
 // State is the persisted client identity + assignment (node.json).
 type State struct {
-	NodeID         string `json:"node_id"`
-	OverlayIP      string `json:"overlay_ip"`
-	ServerKey      string `json:"server_key"`
-	ServerEndpoint string `json:"server_endpoint"`
-	OverlayNet     string `json:"overlay_net"`
+	NodeID           string   `json:"node_id"`
+	OverlayIP        string   `json:"overlay_ip"`
+	ServerKey        string   `json:"server_key"`
+	ServerEndpoint   string   `json:"server_endpoint"`
+	OverlayNet       string   `json:"overlay_net"`
+	AdvertisedRoutes []string `json:"advertised_routes"`
 }
 
 func defaultStateDir() string {
@@ -228,6 +232,7 @@ func Register(serverURL, hostname, stateDir string) (State, error) {
 	st := State{
 		NodeID: rr.NodeID, OverlayIP: rr.OverlayIP, ServerKey: rr.ServerKey,
 		ServerEndpoint: rr.ServerEndpoint, OverlayNet: rr.OverlayNet,
+		AdvertisedRoutes: rr.AdvertisedRoutes,
 	}
 	if err := saveState(stateDir, st); err != nil {
 		return State{}, err

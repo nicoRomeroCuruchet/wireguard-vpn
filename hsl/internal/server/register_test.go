@@ -65,6 +65,14 @@ func TestRegisterSecondNodeGetsNextIP(t *testing.T) {
 	}
 }
 
+func TestRegisterAdvertisedRoutes(t *testing.T) {
+	s := testServer(t)
+	s.cfg.AdvertisedRoutes = []string{"192.168.1.0/24", "10.0.0.0/8"}
+	r := postRegister(t, s, validKey, "node-a")
+	if len(r.AdvertisedRoutes) != 2 || r.AdvertisedRoutes[0] != "192.168.1.0/24" {
+		t.Fatalf("advertised routes mismatch: %v", r.AdvertisedRoutes)
+	}
+}
 func TestRegisterRejectsBadKey(t *testing.T) {
 	s := testServer(t)
 	body, _ := json.Marshal(proto.RegisterRequest{PublicKey: "not-base64!!", Hostname: "x"})

@@ -29,11 +29,14 @@ sudo ./hsl-arm server \
   --addr :8080 \
   --endpoint <PUBLIC_IP>:51820 \
   --db /var/lib/hsl/hsl.db \
-  --key /var/lib/hsl/identity.key
+  --key /var/lib/hsl/identity.key \
+  --advertise-routes 192.168.1.0/24
 ```
 
 Forward UDP/51820 on the router to the BBB. `--endpoint` is the public
 `host:port` clients dial; with a fixed public IP, the literal IP is fine.
+`--advertise-routes` is repeatable and tells remote clients they can reach
+those LAN CIDRs through the hub.
 
 ## Join a node
 
@@ -50,7 +53,8 @@ State (`identity.key`, `node.json`) lives in `~/.local/state/hsl/`.
 2. On PC #1: `register` then `run`. `ping 10.100.0.1` works.
 3. On PC #2: `register` then `run` (gets `10.100.0.3`).
 4. From PC #1: `ping 10.100.0.3` works (traffic transits the hub).
-5. Restart the hub: clients keep working (state restored from SQLite).
+5. With `--advertise-routes 192.168.1.0/24` on the hub: from PC #1, `ping 192.168.1.42` reaches a device on the hub's home LAN. Requires `net.ipv4.ip_forward=1` on the hub.
+6. Restart the hub: clients keep working (state restored from SQLite).
 
 ## Scope
 

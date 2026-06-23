@@ -41,6 +41,34 @@ func TestPeersListsRegisteredNodes(t *testing.T) {
 	}
 }
 
+func TestPeersHubAdvertisedRoutes(t *testing.T) {
+	s := testServer(t)
+	s.cfg.AdvertisedRoutes = []string{"192.168.1.0/24"}
+	r := postRegister(t, s, validKey, "node-a")
+
+	req := httptest.NewRequest(http.MethodGet, "/peers", nil)
+	req.Header.Set("X-Node-ID", r.NodeID)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp proto.PeersResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	var hub *proto.Peer
+	for i := range resp.Peers {
+		if resp.Peers[i].ID == "hub" {
+			hub = &resp.Peers[i]
+			break
+		}
+	}
+	if hub == nil {
+		t.Fatal("hub peer missing")
+	}
+	if len(hub.AdvertisedRoutes) != 1 || hub.AdvertisedRoutes[0] != "192.168.1.0/24" {
+		t.Fatalf("hub advertised routes mismatch: %v", hub.AdvertisedRoutes)
+	}
+}
 func TestHeartbeatOK(t *testing.T) {
 	s := testServer(t)
 	r := postRegister(t, s, validKey, "node-a")

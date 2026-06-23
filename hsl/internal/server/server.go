@@ -17,11 +17,12 @@ import (
 
 // Config holds server runtime configuration from flags.
 type Config struct {
-	Addr        string // HTTP listen address, e.g. ":8080"
-	DBPath      string // SQLite path (unused until Task 13)
-	Endpoint    string // public WireGuard endpoint host:port returned to clients
-	OverlayCIDR string // e.g. "10.100.0.0/24"
-	KeyPath     string // path to hub WireGuard private key; default /var/lib/hsl/identity.key
+	Addr             string   // HTTP listen address, e.g. ":8080"
+	DBPath           string   // SQLite path (unused until Task 13)
+	Endpoint         string   // public WireGuard endpoint host:port returned to clients
+	OverlayCIDR      string   // e.g. "10.100.0.0/24"
+	KeyPath          string   // path to hub WireGuard private key; default /var/lib/hsl/identity.key
+	AdvertisedRoutes []string // CIDRs to advertise to clients (LAN reachability)
 }
 
 const (
@@ -137,11 +138,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) registerResponse(n Node) proto.RegisterResponse {
 	return proto.RegisterResponse{
-		NodeID:         n.ID,
-		OverlayIP:      n.OverlayIP,
-		ServerKey:      s.serverPublicKey(),
-		ServerEndpoint: s.cfg.Endpoint,
-		OverlayNet:     s.cfg.OverlayCIDR,
+		NodeID:           n.ID,
+		OverlayIP:        n.OverlayIP,
+		ServerKey:        s.serverPublicKey(),
+		ServerEndpoint:   s.cfg.Endpoint,
+		OverlayNet:       s.cfg.OverlayCIDR,
+		AdvertisedRoutes: s.cfg.AdvertisedRoutes,
 	}
 }
 
@@ -178,6 +180,7 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 	// Advertise the hub itself first.
 	resp.Peers = append(resp.Peers, proto.Peer{
 		ID: "hub", PublicKey: s.serverPublicKey(), OverlayIP: s.hubIP, Hostname: "hub",
+		AdvertisedRoutes: s.cfg.AdvertisedRoutes,
 	})
 	for _, n := range nodes {
 		resp.Peers = append(resp.Peers, proto.Peer{
@@ -245,6 +248,9 @@ func (s *Server) Run(ctx context.Context) error {
 		if err := s.reconcileWG(); err != nil {
 			return fmt.Errorf("initial wireguard reconcile: %w", err)
 		}
+		if err := s.setupSNAT(); err != nil {
+			return fmt.Errorf("setup snat: %w", err)
+		}
 	}
 	srv := &http.Server{Addr: s.cfg.Addr, Handler: s.Handler()}
 	errCh := make(chan error, 1)
@@ -260,6 +266,19 @@ func (s *Server) Run(ctx context.Context) error {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		s.log.Info("shutting down")
+		if !s.skipWG {
+			if err := s.teardownSNAT(); err != nil {
+				s.log.Warn("teardown snat failed", "err", err)
+			}
+		}
 		return srv.Shutdown(shutCtx)
 	}
+}
+
+func (s *Server) setupSNAT() error {
+	return SetupSNAT(s.cfg.OverlayCIDR, s.cfg.AdvertisedRoutes)
+}
+
+func (s *Server) teardownSNAT() error {
+	return TeardownSNAT(s.cfg.OverlayCIDR, s.cfg.AdvertisedRoutes)
 }
