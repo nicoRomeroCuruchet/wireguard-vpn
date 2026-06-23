@@ -279,6 +279,22 @@ WantedBy=multi-user.target
 
 Adjust `YOUR_USER` to the user who ran `hsl client register`.
 
+> **NetworkManager note:** On desktop Linux distributions, NetworkManager may
+> detect `wg0` and try to manage it, which can remove the address and routes
+> that `hsl` sets. If the tunnel works after starting but breaks after a
+> restart, tell NetworkManager to ignore `wg0`:
+>
+> ```bash
+> sudo mkdir -p /etc/NetworkManager/conf.d
+> cat <<'EOF' | sudo tee /etc/NetworkManager/conf.d/99-unmanaged-wg0.conf
+> [keyfile]
+> unmanaged-devices=interface-name:wg0
+> EOF
+> sudo systemctl reload NetworkManager
+> sudo nmcli connection delete wg0 2>/dev/null || true
+> sudo systemctl restart hsl-client
+> ```
+
 Enable and start:
 
 ```bash
@@ -345,6 +361,23 @@ Expected demo:
 
 - Verify the service is enabled: `sudo systemctl is-enabled hsl-server`.
 - Ensure `/var/lib/hsl` exists and is writable.
+
+### Tunnel works once but breaks after `systemctl restart hsl-client`
+
+NetworkManager may have taken over `wg0`. Check with:
+
+```bash
+nmcli device show wg0
+```
+
+If it shows a NetworkManager connection, apply the unmanaged config from the
+client deployment section, delete the `wg0` connection, and restart the
+service:
+
+```bash
+sudo nmcli connection delete wg0
+sudo systemctl restart hsl-client
+```
 
 ---
 
