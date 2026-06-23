@@ -57,12 +57,15 @@ func realConfigureWG(st State, priv wgtypes.Key) error {
 	allowedIPs := make([]string, 0, 1+len(st.AdvertisedRoutes))
 	allowedIPs = append(allowedIPs, st.OverlayNet)
 	allowedIPs = append(allowedIPs, st.AdvertisedRoutes...)
-	return wgmgr.ConfigureDevice(wgInterface, priv, 0, []wgmgr.PeerConfig{{
+	if err := wgmgr.ConfigureDevice(wgInterface, priv, 0, []wgmgr.PeerConfig{{
 		PublicKey:  st.ServerKey,
 		Endpoint:   st.ServerEndpoint,
 		AllowedIPs: allowedIPs,
 		Keepalive:  keepalive,
-	}})
+	}}); err != nil {
+		return err
+	}
+	return wgmgr.EnsureRoutes(wgInterface, st.AdvertisedRoutes)
 }
 
 func fetchPeers(httpClient *http.Client, serverURL, nodeID string) (proto.PeersResponse, error) {

@@ -3,6 +3,7 @@ package wgmgr
 import (
 	"errors"
 	"fmt"
+	"net"
 
 	"github.com/vishvananda/netlink"
 )
@@ -41,6 +42,29 @@ func EnsureInterface(name, addrCIDR string, mtu int) error {
 	}
 	if err := netlink.LinkSetUp(link); err != nil {
 		return fmt.Errorf("bring up %s: %w", name, err)
+	}
+	return nil
+}
+
+// EnsureRoutes installs routes for the given CIDRs through the named interface.
+// It is idempotent and ignores routes that already exist. Requires CAP_NET_ADMIN.
+func EnsureRoutes(iface string, routes []string) error {
+	if len(routes) == 0 {
+		return nil
+	}
+	link, err := netlink.LinkByName(iface)
+	if err != nil {
+		return fmt.Errorf("look up %s: %w", iface, err)
+	}
+	for _, r := range routes {
+		_, dst, err := net.ParseCIDR(r)
+		if err != nil {
+			return fmt.Errorf("parse route %q: %w", r, err)
+		}
+		route := netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst}
+		if err := netlink.RouteReplace(&route); err != nil {
+			return fmt.Errorf("add route %s via %s: %w", r, iface, err)
+		}
 	}
 	return nil
 }
